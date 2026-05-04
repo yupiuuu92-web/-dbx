@@ -53,7 +53,15 @@ async def start(m: types.Message):
     kb.add("🪤 Trap", "📱 Dox Phone")
     if role in ["Premium", "Admin", "Owner"]: kb.add("👤 Dox User", "🖼 EXIF Data")
     if role in ["Owner", "Admin"]: kb.add("📊 Stats", "🚨 Panic")
-    await m.answer(f"🦾 <b>DropDox v0.5.5</b>\nСтатус: <b>{role}</b>", reply_markup=kb, parse_mode="HTML")
+    await m.answer(f"🦾 <b>DropDox v0.5.5
+    Доступные функции:
+🪤 Trap (Ловушка): Бот создаст для тебя персональную ссылку. Скинь её цели под любым предлогом (например, «посмотри мои фотки»). Как только цель кликнет — бот пришлет тебе её IP, город и провайдера.
+📱 Dox Phone: Просто отправь номер телефона в формате +7... или +996..., и бот покажет, какому оператору он принадлежит и из какого региона.
+👤 Dox User (Premium): Введи никнейм @username, и бот найдет аккаунты в соцсетях и другие следы в сети.
+🖼 EXIF Data (Premium): Отправь фото файлом (без сжатия). Бот вытащит из него скрытую инфу: модель телефона и даже GPS-координаты места, где было сделано фото.
+Как получить Premium?
+Обратитесь к администратору.
+Доступ выдается на определенное время (от 1 дня до года).</b>\nСтатус: <b>{role}</b>", reply_markup=kb, parse_mode="HTML")
 
 @dp.message_handler(lambda m: m.text == "🪤 Trap")
 async def trap_handler(m: types.Message):
