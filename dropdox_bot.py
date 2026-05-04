@@ -7,9 +7,9 @@ from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 
 # Настройки через переменные окружения Railway
-API_TOKEN = os.environ.get('API_TOKEN')
+API_TOKEN = os.environ.get('8504796844:AAGVerEJuDpiCiR-HxyP7t2GAfY-dFgAq3k')
 # URL твоего приложения на Railway, например: https://dropdox-production.up.railway.app
-TRACKER_URL = os.environ.get('TRACKER_URL', 'https://your-app.up.railway.app/track')
+TRACKER_URL = os.environ.get('TRACKER_URL', 'worjer-production.up.railway.app')
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
