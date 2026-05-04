@@ -1,12 +1,21 @@
 import subprocess
 import os
+import sys
 
-# Запускаем логгер (Flask)
-logger = subprocess.Popen(["python3", "logger.py"])
+print("--- ЗАПУСК СИСТЕМЫ GHOST-COMMANDER ---")
+
+# Запускаем логгер (Flask) и перенаправляем вывод в основной терминал
+logger = subprocess.Popen([sys.executable, "logger.py"], stdout=None, stderr=None)
 
 # Запускаем бота
-bot = subprocess.Popen(["python3", "dropdox_bot.py"])
+bot = subprocess.Popen([sys.executable, "dropdox_bot.py"], stdout=None, stderr=None)
 
-# Ждем завершения (чтобы контейнер не закрылся)
-logger.wait()
-bot.wait()
+print("--- ВСЕ ПРОЦЕССЫ ИНИЦИИРОВАНЫ ---")
+
+try:
+    logger.wait()
+    bot.wait()
+except KeyboardInterrupt:
+    logger.terminate()
+    bot.terminate()
+  
