@@ -57,6 +57,102 @@ async def dox_user(m: types.Message):
 
 # --- 4. EXIF (ФОТО) ---
 @dp.message_handler(content_types=['document', 'photo'])
+def get_decimal_coords(gps_info):
+    try:
+        def convert_to_degrees(value):
+            d = float(value[0])
+            m = float(value[1])
+            s = float(value[2])
+            return d + (m / 60.0) + (s / 3600.0)
+
+        # GPSInfo теги: 1 - N/S, 2 - Latitude, 3 - E/W, 4 - Longitude
+        lat_ref = gps_info[1]
+        lat_val = gps_info[2]
+        lon_ref = gps_info[3]
+        lon_val = gps_info[4]
+
+        lat = convert_to_degrees(lat_val)
+        if lat_ref != 'N': lat = -lat
+
+        lon = convert_to_degrees(lon_val)
+        if lon_ref != 'E': lon = -lon
+
+        return lat, lon
+    except Exception as e:
+        logging.error(f"Ошибка GPS конвертации: {e}")
+        return None
+
+# --- 4. EXIF (ФОТО) ОБНОВЛЕННЫЙ ---
+@dp.message_handler(content_types=['document', 'photo'])
+async def extract_exif(message: types.Message):
+    await message.answer("📥 Принимаю файл, анализирую метаданные...")
+    
+    # Берем файл (оригинал, если отправлен как документ)
+    file_id = message.document.file_id if message.document else message.photo[-1].file_id
+    file_info = await bot.get_file(file_id)
+    downloaded_file = await bot.download_file(file_info.file_path)
+    
+    temp_filename = f"temp_{message.from_user.id}.jpg"
+    with open(temp_filename, 'wb') as f:
+        f.write(downloaded_file.read())
+    
+    try:
+        img = Image.open(temp_filename)
+        info = img._getexif()
+        
+        if not info:
+            await message.answer("ℹ️ В этом фото нет метаданных EXIF. (Telegram часто стирает их при отправке обычным фото. Пробуй отправлять 'как файл').")
+            os.remove(temp_filename)
+            return
+
+        # 1. Читаем все данные (стандартно)
+        exif_data = ""
+        gps_raw = None
+        make = "Unknown"
+        model = "Unknown"
+        
+        for tag, value in info.items():
+            decoded = TAGS.get(tag, tag)
+            if decoded == "GPSInfo":
+                gps_raw = value # Сохраняем для карты
+            
+            # Собираем инфо для краткого отчета
+            if decoded == "Make": make = value
+            if decoded == "Model": model = value
+            
+            # Полный лог (если нужно, можно закомментить)
+            # exif_data += f"<b>{decoded}:</b> {value}\n"
+
+        # 2. Обрабатываем GPS и делаем карту
+        map_link = ""
+        if gps_raw:
+            coords = get_decimal_coords(gps_raw)
+            if coords:
+                lat, lon = coords
+                # Генерируем ссылку на Google Карты (режим спутника)
+                map_link = f"https://www.google.com/maps/place/{lat},{lon}/@{lat},{lon},17z/data=!3m1!1e3"
+
+        # 3. Формируем ответ
+        report = (
+            f"🖼 <b>Результат анализа фото:</b>\n\n"
+            f"📱 <b>Устройство:</b> {make} {model}\n"
+        )
+        
+        if map_link:
+            report += f"\n📍 <b>НАЙДЕНО МЕСТО СЪЕМКИ:</b>\n<a href='{map_link}'>Открыть Google Карты (Спутник)</a>"
+        else:
+            report += "\n🌐 Координаты в фото не найдены."
+            
+        await message.answer(report, parse_mode="HTML", disable_web_page_preview=False)
+
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при чтении файла: {e}")
+    
+    finally:
+        # Удаляем временный файл
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
+            
 async def extract_exif(message: types.Message):
     # Берем файл (лучше кидать как документ, чтобы ТГ не сжимал и не тер EXIF)
     file_id = message.document.file_id if message.document else message.photo[-1].file_id
