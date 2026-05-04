@@ -1,1 +1,2 @@
-web: python3 logger.py
+worker: python3 dropdox_bot.py
+
