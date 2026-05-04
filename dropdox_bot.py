@@ -7,7 +7,7 @@ from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 
 API_TOKEN = "8504796844:AAGVerEJuDpiCiR-HxyP7t2GAfY-dFgAq3k"
-TRACKER_URL = "https://worker-production.up.railway.app/track"
+TRACKER_URL = "https://dropdox.up.railway.app/track"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
